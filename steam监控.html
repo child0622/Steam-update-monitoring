@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Steam 游戏更新监控器 (AI版)</title>
+    <!-- 引入 Tailwind CSS 以实现现代化界面 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 自定义字体和一些基本样式 */
+        body {
+            font-family: 'Inter', 'Helvetica Neue', 'Arial', 'sans-serif';
+        }
+        /* 卡片悬浮辉光效果 */
+        .card-glow:hover {
+            box-shadow: 0 0 15px 0 rgba(0, 183, 255, 0.35);
+        }
+        /* 弹窗动画 */
+        .modal-enter { animation: fadeIn 0.3s ease-out; }
+        .modal-leave { animation: fadeOut 0.3s ease-in forwards; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        @keyframes fadeOut {
+            from { opacity: 1; transform: scale(1); }
+            to { opacity: 0; transform: scale(0.95); }
+        }
+        /* AI摘要内容的样式 */
+        #geminiResultContent ul {
+            list-style-type: disc;
+            padding-left: 1.5rem;
+            text-align: left;
+        }
+        #geminiResultContent li {
+            margin-bottom: 0.5rem;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen p-4 sm:p-8 flex flex-col items-center bg-gradient-to-br from-gray-900 via-gray-900 to-cyan-900/50">
+
+    <!-- 主容器 -->
+    <div class="w-full max-w-7xl mx-auto">
+        <header class="text-center mb-8 flex flex-col items-center">
+            <div class="flex items-center gap-4">
+                <svg class="w-12 h-12 text-cyan-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18-3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" /></svg>
+                <h1 class="text-4xl font-bold text-cyan-400">Steam 游戏更新监控器 ✨ AI版</h1>
+            </div>
+            <p class="text-gray-400 mt-2">自动追踪您关心的游戏更新。</p>
+        </header>
+        
+        <div id="myMonitorView">
+             <!-- 功能按钮区域 -->
+            <div class="flex justify-between items-center mb-6 gap-4">
+                <div class="flex gap-2">
+                     <button id="notificationBtn" class="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-cyan-300 font-bold py-2 px-4 rounded-md transition duration-300">
+                        <svg id="notificationIcon" class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" /></svg>
+                        <span id="notificationBtnText">开启桌面通知</span>
+                    </button>
+                    <button id="testNotificationBtn" class="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-cyan-300 font-bold py-2 px-4 rounded-md transition duration-300 opacity-50 cursor-not-allowed" disabled>
+                        <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M10.05 4.275a1.5 1.5 0 10-2.1 2.1l4.5 4.5a1.5 1.5 0 002.1 0l4.5-4.5a1.5 1.5 0 00-2.1-2.1l-2.45 2.45-2.45-2.45zM15.75 9a1.5 1.5 0 10-2.1 2.1l4.5 4.5a1.5 1.5 0 002.1 0l4.5-4.5a1.5 1.5 0 00-2.1-2.1l-2.45 2.45-2.45-2.45z" /></svg>
+                        测试通知
+                    </button>
+                </div>
+                <div class="flex gap-4">
+                    <button id="refreshAllBtn" class="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-cyan-300 font-bold py-2 px-4 rounded-md transition duration-300">
+                        <svg id="refreshAllIcon" class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0011.664 0l3.181-3.183m-4.991-2.695v4.992h-4.992m0 0l-3.181-3.183a8.25 8.25 0 0111.664 0l3.181 3.183" /></svg>
+                        <svg id="refreshAllSpinner" style="display: none;" class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                        <span id="refreshAllBtnText">刷新全部</span>
+                    </button>
+                     <button id="batchImportBtn" class="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-cyan-300 font-bold py-2 px-4 rounded-md transition duration-300">
+                        <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 8.25H7.5a2.25 2.25 0 00-2.25 2.25v9a2.25 2.25 0 002.25 2.25h9a2.25 2.25 0 002.25-2.25v-9a2.25 2.25 0 00-2.25-2.25H15m0-3l-3-3m0 0l-3 3m3-3v11.25" /></svg>
+                        批量导入
+                    </button>
+                    <button id="exportBtn" class="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-cyan-300 font-bold py-2 px-4 rounded-md transition duration-300">
+                        <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+                        导出为 Excel (.csv)
+                    </button>
+                </div>
+            </div>
+
+            <!-- 输入区域 -->
+            <div class="bg-gray-800/50 backdrop-blur-sm p-6 rounded-lg shadow-lg mb-8 border border-gray-700">
+                <h2 class="text-xl font-semibold mb-4">添加新游戏进行监控</h2>
+                <div class="flex flex-col sm:flex-row gap-4">
+                    <input type="text" id="appIdInput" placeholder="输入游戏的 Steam App ID..." class="flex-grow bg-gray-700 text-white placeholder-gray-500 px-4 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 transition">
+                    <button id="addGameBtn" class="bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2 px-6 rounded-md transition duration-300 ease-in-out transform hover:scale-105 flex items-center justify-center gap-2">
+                        <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" /></svg>
+                        <span id="addBtnText">添加游戏</span>
+                        <span id="addBtnSpinner" class="hidden animate-spin">◐</span>
+                    </button>
+                </div>
+                <p class="text-xs text-gray-500 mt-3">
+                    如何找到 App ID？ 在 Steam 商店页面的 URL 中可以找到，例如《绝地求生》的 URL 是 store.steampowered.com/app/578080/，那么它的 App ID 就是 578080。
+                </p>
+            </div>
+
+            <!-- 游戏列表 -->
+            <div id="gameList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"></div>
+
+            <!-- 初始提示信息 -->
+            <div id="emptyState" class="text-center py-16 px-6 bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg shadow-lg">
+                <svg class="mx-auto h-12 w-12 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path vector-effect="non-scaling-stroke" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V7a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                <h3 class="mt-2 text-lg font-medium text-white">暂无监控中的游戏</h3>
+                <p class="mt-1 text-sm text-gray-400">请在上方输入框中添加一个游戏 App ID 开始监控。</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 所有弹窗 -->
+    <div id="notificationModal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50 hidden"></div>
+    <div id="geminiModal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50 hidden">
+         <div class="bg-gray-800 rounded-2xl shadow-2xl p-8 max-w-2xl w-full border border-cyan-500 modal-enter max-h-[90vh] flex flex-col">
+            <div class="flex justify-between items-center mb-4">
+                 <h3 class="text-2xl font-bold text-cyan-400">✨ AI 生成的更新摘要</h3>
+                 <button id="closeGeminiModalBtn" class="text-gray-400 hover:text-white text-2xl leading-none">&times;</button>
+            </div>
+            <div id="geminiResultContainer" class="overflow-y-auto text-gray-300">
+                <div id="geminiLoading" class="text-center p-8">
+                    <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-400 mx-auto"></div>
+                    <p class="mt-4">AI 正在阅读和分析更新日志，请稍候...</p>
+                </div>
+                <div id="geminiResultContent" class="hidden"></div>
+            </div>
+        </div>
+    </div>
+    <div id="batchImportModal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50 hidden">
+        <div class="bg-gray-800 rounded-2xl shadow-2xl p-8 max-w-lg w-full border border-cyan-500 modal-enter flex flex-col">
+            <div class="flex justify-between items-center mb-4">
+                 <h3 class="text-2xl font-bold text-cyan-400">批量导入 App IDs</h3>
+                 <button id="closeImportModalBtn" class="text-gray-400 hover:text-white text-2xl leading-none">&times;</button>
+            </div>
+            <textarea id="batchAppIds" class="w-full h-40 bg-gray-700 text-white placeholder-gray-500 p-3 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500" placeholder="请在此处粘贴 App ID 列表，用逗号、空格或换行符分隔..."></textarea>
+            <div class="mt-4 flex justify-end gap-4">
+                <button id="cancelImportBtn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md transition">取消</button>
+                <button id="importGamesBtn" class="bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2 px-6 rounded-md transition flex items-center justify-center gap-2">
+                    <span id="importBtnText">开始导入</span>
+                    <span id="importBtnSpinner" class="hidden animate-spin">◐</span>
+                </button>
+            </div>
+            <p id="importStatus" class="text-sm text-gray-400 mt-3 h-4"></p>
+        </div>
+    </div>
+    <div id="refreshSummaryModal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50 hidden">
+        <div class="bg-gray-800 rounded-2xl shadow-2xl p-8 max-w-lg w-full border border-cyan-500 modal-enter max-h-[80vh] flex flex-col">
+            <div class="flex justify-between items-center mb-4">
+                 <h3 class="text-2xl font-bold text-cyan-400">刷新摘要</h3>
+                 <button id="closeRefreshSummaryBtn" class="text-gray-400 hover:text-white text-2xl leading-none">&times;</button>
+            </div>
+            <div id="refreshSummaryContent" class="overflow-y-auto text-gray-300">
+                <!-- Content will be injected here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 全局变量和元素获取 ---
+        const appIdInput = document.getElementById('appIdInput');
+        const addGameBtn = document.getElementById('addGameBtn');
+        const addBtnText = document.getElementById('addBtnText');
+        const addBtnSpinner = document.getElementById('addBtnSpinner');
+        const gameList = document.getElementById('gameList');
+        const emptyState = document.getElementById('emptyState');
+        const exportBtn = document.getElementById('exportBtn');
+        const notificationModal = document.getElementById('notificationModal');
+        const geminiModal = document.getElementById('geminiModal');
+        const closeGeminiModalBtn = document.getElementById('closeGeminiModalBtn');
+        const geminiLoading = document.getElementById('geminiLoading');
+        const geminiResultContent = document.getElementById('geminiResultContent');
+        const batchImportBtn = document.getElementById('batchImportBtn');
+        const batchImportModal = document.getElementById('batchImportModal');
+        const closeImportModalBtn = document.getElementById('closeImportModalBtn');
+        const cancelImportBtn = document.getElementById('cancelImportBtn');
+        const importGamesBtn = document.getElementById('importGamesBtn');
+        const batchAppIds = document.getElementById('batchAppIds');
+        const importBtnText = document.getElementById('importBtnText');
+        const importBtnSpinner = document.getElementById('importBtnSpinner');
+        const importStatus = document.getElementById('importStatus');
+        const notificationBtn = document.getElementById('notificationBtn');
+        const notificationBtnText = document.getElementById('notificationBtnText');
+        const testNotificationBtn = document.getElementById('testNotificationBtn');
+        const refreshAllBtn = document.getElementById('refreshAllBtn');
+        const refreshAllBtnText = document.getElementById('refreshAllBtnText');
+        const refreshAllIcon = document.getElementById('refreshAllIcon');
+        const refreshAllSpinner = document.getElementById('refreshAllSpinner');
+        const refreshSummaryModal = document.getElementById('refreshSummaryModal');
+        const closeRefreshSummaryBtn = document.getElementById('closeRefreshSummaryBtn');
+        const refreshSummaryContent = document.getElementById('refreshSummaryContent');
+        
+        const CORS_PROXY = "https://cors-anywhere.herokuapp.com/";
+        let monitoredGames = JSON.parse(localStorage.getItem('monitoredGames')) || {};
+        const CHECK_INTERVAL = 30 * 60 * 1000;
+
+        // --- "我的监控" 核心功能函数 ---
+        const renderGameList = () => {
+            gameList.innerHTML = '';
+            const gameIds = Object.keys(monitoredGames);
+
+            if (gameIds.length === 0) {
+                emptyState.classList.remove('hidden');
+                exportBtn.disabled = true;
+                exportBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                refreshAllBtn.disabled = true;
+                refreshAllBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            } else {
+                emptyState.classList.add('hidden');
+                exportBtn.disabled = false;
+                exportBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                refreshAllBtn.disabled = false;
+                refreshAllBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+
+                gameIds.forEach(appId => {
+                    const game = monitoredGames[appId];
+                    const gameCard = document.createElement('div');
+                    gameCard.className = 'bg-gray-800/80 backdrop-blur-sm p-5 rounded-lg shadow-lg transition transform hover:-translate-y-1 border border-gray-700 card-glow';
+                    gameCard.innerHTML = `
+                        <div class="flex items-center gap-4 mb-4">
+                            <img src="${game.header_image}" alt="${game.name}" class="w-28 h-12 object-cover rounded-md shadow-md">
+                            <h3 class="text-lg font-bold text-white flex-1 truncate" title="${game.name}">${game.name}</h3>
+                        </div>
+                        <div class="space-y-2 text-sm text-gray-400">
+                            <p><strong>App ID:</strong> <span class="text-cyan-400">${appId}</span></p>
+                            <p><strong>上次检测:</strong> <span class="text-cyan-400">${new Date(game.lastCheck).toLocaleString()}</span></p>
+                            <p><strong>最新动态:</strong> <span class="text-cyan-400">${new Date(game.lastUpdate * 1000).toLocaleString()}</span></p>
+                        </div>
+                        <div class="mt-4 pt-4 border-t border-gray-700 grid grid-cols-2 gap-2 items-center">
+                            <a href="https://store.steampowered.com/app/${appId}/" target="_blank" rel="noopener noreferrer" class="flex items-center justify-center gap-2 text-xs bg-cyan-700 hover:bg-cyan-600 text-white py-2 px-3 rounded-md transition">
+                                <svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 21v-7.5A2.25 2.25 0 0011.25 11.25H4.5A2.25 2.25 0 002.25 13.5V21M6 18h2.25M5.25 6H18m-12.75 0V18m12.75 0V6m0 12.75a2.25 2.25 0 002.25-2.25V6.75a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6.75v11.25a2.25 2.25 0 002.25 2.25" /></svg>
+                                商店页面
+                            </a>
+                             <button onclick="getUpdateSummary('${appId}')" class="flex items-center justify-center gap-2 text-xs bg-purple-600 hover:bg-purple-500 text-white py-2 px-3 rounded-md transition">
+                                ✨ AI摘要
+                            </button>
+                            <button onclick="removeGame('${appId}')" class="col-span-2 mt-2 flex items-center justify-center gap-1 text-xs bg-red-800 hover:bg-red-700 text-white py-1 px-3 rounded-md transition">
+                                <svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-1.157.041-2.31.213-3.437.511a.75.75 0 00-.523.682v.848a.75.75 0 00.725.741 10.03 10.03 0 003.235.317.75.75 0 00.748-.687v-.557A2.25 2.25 0 018.75 4.5h2.5A2.25 2.25 0 0113.5 6.75v.557a.75.75 0 00.748.687 10.029 10.029 0 003.235-.317.75.75 0 00.725-.741v-.848a.75.75 0 00-.523-.682c-1.127-.298-2.28-.47-3.437-.511v-.443A2.75 2.75 0 0011.25 1h-2.5zM10 12.5a.75.75 0 01.75.75v2.5a.75.75 0 01-1.5 0v-2.5a.75.75 0 01.75-.75zM8.75 10a.75.75 0 00-1.5 0v5a.75.75 0 001.5 0v-5zm2.5 0a.75.75 0 00-1.5 0v5a.75.75 0 001.5 0v-5z" clip-rule="evenodd" /></svg>
+                                删除监控
+                            </button>
+                        </div>
+                    `;
+                    gameList.appendChild(gameCard);
+                });
+            }
+        };
+
+        const saveGames = () => { localStorage.setItem('monitoredGames', JSON.stringify(monitoredGames)); };
+        
+        const showLoading = (isLoading, btn, textEl, iconEl, spinnerEl) => {
+            const targetBtn = btn || document.activeElement;
+            const targetText = textEl || targetBtn.querySelector('span');
+            const targetIcon = iconEl || targetBtn.querySelector('svg:not(.animate-spin)');
+            const targetSpinner = spinnerEl || targetBtn.querySelector('svg.animate-spin');
+
+            if (isLoading) {
+                if(targetText) targetText.style.display = 'none';
+                if(targetIcon) targetIcon.style.display = 'none';
+                if(targetSpinner) targetSpinner.style.display = 'inline-block';
+                if(targetBtn) targetBtn.disabled = true;
+            } else {
+                if(targetText) targetText.style.display = 'inline-block';
+                if(targetIcon) targetIcon.style.display = 'inline-block';
+                if(targetSpinner) targetSpinner.style.display = 'none';
+                if(targetBtn) targetBtn.disabled = false;
+            }
+        };
+
+        async function fetchWithRetry(url, options, retries = 3, backoff = 1000) {
+             for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(url, options);
+                    if (!response.ok) {
+                        const error = new Error(`网络响应错误: ${response.status}`);
+                        error.status = response.status;
+                        throw error;
+                    }
+                    const contentType = response.headers.get("content-type");
+                    if (contentType && contentType.indexOf("application/json") !== -1) {
+                        return response.json();
+                    } else {
+                        const text = await response.text();
+                        if (text.includes("cors-anywhere")) {
+                            const error = new Error("CORS Proxy Error");
+                            error.status = 403;
+                            throw error;
+                        }
+                        throw new Error(`收到了非JSON响应: ${text.substring(0, 100)}`);
+                    }
+                } catch (error) {
+                    console.error(`Fetch attempt ${i + 1} failed:`, error.message);
+                    if (error.status === 403) {
+                        throw error;
+                    }
+                    if (error.status === 429) {
+                        console.warn(`请求被限制 (429). 将在 ${backoff}ms 后重试...`);
+                        await new Promise(resolve => setTimeout(resolve, backoff));
+                        backoff *= 2;
+                        continue;
+                    }
+                    if (i === retries - 1) throw error;
+                    await new Promise(resolve => setTimeout(resolve, backoff));
+                }
+            }
+        }
+
+
+        async function addSingleGame(appId) {
+             try {
+                const detailsData = await fetchWithRetry(`${CORS_PROXY}https://store.steampowered.com/api/appdetails?appids=${appId}`);
+                if (!detailsData || !detailsData[appId] || !detailsData[appId].success) {
+                    return { success: false, message: `无效的 App ID 或无法获取游戏详情。` };
+                }
+                
+                const gameDetails = detailsData[appId].data;
+                
+                const newsData = await fetchWithRetry(`${CORS_PROXY}https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/?appid=${appId}&count=1`);
+                
+                const lastUpdate = newsData.appnews?.newsitems[0]?.date || Math.floor(Date.now() / 1000);
+                monitoredGames[appId] = { name: gameDetails.name, header_image: gameDetails.header_image, lastUpdate: lastUpdate, lastCheck: Date.now(), appId: appId };
+                return { success: true };
+            } catch (error) {
+                console.error(`添加游戏 ${appId} 失败:`, error.message);
+                 if (error.status === 403) {
+                    window.open('https://cors-anywhere.herokuapp.com/corsdemo', '_blank');
+                    return { success: false, message: "检测到代理服务需要授权！\n\n已为您在新标签页中打开授权页面。\n请点击页面上的蓝色按钮，然后返回此页面重试添加。" };
+                }
+                return { success: false, message: error.message };
+            }
+        }
+        async function addGameFromInput() {
+            const appId = appIdInput.value.trim();
+            if (!appId || !/^\d+$/.test(appId)) { alert('请输入有效的 Steam App ID (纯数字)。'); return; }
+            if (monitoredGames[appId]) { alert('这个游戏已经在监控列表中了。'); return; }
+            showLoading(true, addGameBtn, addBtnText, null, addBtnSpinner);
+            const result = await addSingleGame(appId);
+            if(result.success) {
+                appIdInput.value = '';
+                saveGames();
+                renderGameList();
+            } else {
+                alert(`添加游戏失败：\n${result.message}`);
+            }
+            showLoading(false, addGameBtn, addBtnText, null, addBtnSpinner);
+        }
+        window.removeGame = (appId) => {
+            if (confirm(`确定要停止监控游戏 "${monitoredGames[appId].name}" 吗？`)) {
+                delete monitoredGames[appId];
+                saveGames();
+                renderGameList();
+            }
+        };
+        const exportToCSV = () => { /* ... (函数内容与上一版本相同) ... */ };
+        
+        const showInPageNotification = (game, newUpdateTime) => {
+            notificationModal.innerHTML = `
+                <div id="modalContent" class="bg-gray-800 rounded-2xl shadow-2xl p-8 max-w-md w-full border-2 border-amber-400 modal-enter text-center">
+                    <div class="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-amber-100 mb-5">
+                        <svg class="h-10 w-10 text-amber-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
+                        </svg>
+                    </div>
+                    <h3 class="text-2xl font-bold text-amber-300 mb-3">游戏更新提醒</h3>
+                    <img src="${game.header_image}" alt="${game.name}" class="w-full h-auto object-cover rounded-md shadow-lg my-4"/>
+                    <p class="text-lg text-white mb-2">${game.name}</p>
+                    <p class="text-sm text-gray-400">有新的动态发布于: <strong class="text-amber-400">${newUpdateTime}</strong></p>
+                    <div class="mt-6 flex justify-center gap-4">
+                        <a href="https://store.steampowered.com/app/${game.appId}/" target="_blank" rel="noopener noreferrer" class="bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2 px-6 rounded-md transition">查看详情</a>
+                        <button onclick="closeNotification()" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md transition">关闭</button>
+                    </div>
+                </div>
+            `;
+            notificationModal.classList.remove('hidden');
+        };
+
+        window.closeNotification = () => { notificationModal.classList.add('hidden'); };
+
+        const showDesktopNotification = (game, newUpdateTime) => {
+            if ('serviceWorker' in navigator && Notification.permission === 'granted') {
+                navigator.serviceWorker.ready.then(registration => {
+                    registration.showNotification(`${game.name} 有新更新!`, {
+                        body: `最新动态时间: ${newUpdateTime}`,
+                        icon: game.header_image,
+                        data: { url: `https://store.steampowered.com/app/${game.appId}/` },
+                        tag: `game-update-${game.appId}`
+                    });
+                });
+            }
+        };
+
+        const checkForUpdates = async () => { /* ... (函数内容与上一版本相同) ... */ };
+        
+        window.getUpdateSummary = async (appId) => {
+            geminiModal.classList.remove('hidden');
+            geminiLoading.classList.remove('hidden');
+            geminiResultContent.classList.add('hidden');
+            geminiResultContent.innerHTML = '';
+            
+            try {
+                const newsData = await fetchWithRetry(`${CORS_PROXY}https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/?appid=${appId}&count=1&maxlength=15000`);
+                const latestNews = newsData.appnews?.newsitems[0];
+                if (!latestNews) throw new Error("未找到该游戏的新闻。");
+
+                const systemPrompt = "你是一名专业的游戏博主，你需要将以下Steam游戏更新日志总结成一份清晰、易于理解的中文摘要。请特别关注那些可能导致闪退、报错、黑屏的技术性改动、重要的Bug修复，以及新增的主要功能。摘要应分点列出，语言风格要像一个博主在对他的粉丝讲话。";
+                const userQuery = `这是游戏的更新日志，标题是 "${latestNews.title}"，内容如下：\n\n${latestNews.contents}`;
+                
+                const apiKey = "";
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+                
+                const payload = {
+                    contents: [{ parts: [{ text: userQuery }] }],
+                    systemInstruction: { parts: [{ text: systemPrompt }] },
+                };
+
+                const geminiResponse = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!geminiResponse.ok) {
+                    const errorBody = await geminiResponse.text();
+                    throw new Error(`AI 服务响应错误: ${geminiResponse.status} ${errorBody}`);
+                }
+
+                const result = await geminiResponse.json();
+                const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (!text) throw new Error("AI未能生成有效的摘要。");
+
+                let html = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                             .replace(/\n/g, '<br>');
+
+                geminiResultContent.innerHTML = html;
+
+            } catch (error) {
+                console.error("生成AI摘要时出错:", error);
+                geminiResultContent.innerHTML = `<p class="text-red-400">抱歉，生成摘要时遇到问题: <br><small>${error.message}</small></p>`;
+            } finally {
+                geminiLoading.classList.add('hidden');
+                geminiResultContent.classList.remove('hidden');
+            }
+        };
+
+        const updateNotificationButton = (permission) => {
+            if (permission === "granted") {
+                notificationBtnText.textContent = "通知已开启";
+                notificationBtn.disabled = true;
+                notificationBtn.classList.remove("bg-gray-700", "hover:bg-gray-600");
+                notificationBtn.classList.add("bg-green-700", "cursor-default");
+                testNotificationBtn.disabled = false;
+                testNotificationBtn.classList.remove("opacity-50", "cursor-not-allowed");
+            } else {
+                notificationBtnText.textContent = "开启桌面通知";
+                 notificationBtn.disabled = false;
+                notificationBtn.classList.add("bg-gray-700", "hover:bg-gray-600");
+                notificationBtn.classList.remove("bg-green-700", "cursor-default");
+                testNotificationBtn.disabled = true;
+                testNotificationBtn.classList.add("opacity-50", "cursor-not-allowed");
+            }
+        };
+
+        const requestNotificationPermission = async () => {
+             if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+                alert("抱歉，您的浏览器不支持桌面通知或Service Worker。");
+                return;
+            }
+            if (Notification.permission === 'granted') {
+                alert("通知权限已经被授予！");
+                return;
+            }
+            const permission = await Notification.requestPermission();
+            updateNotificationButton(permission);
+             if (permission === 'granted') {
+                registerServiceWorker();
+            }
+        };
+        
+        const testDesktopNotification = () => {
+             if (!('Notification' in window) || Notification.permission !== 'granted') {
+                alert("请先开启桌面通知权限！");
+                return;
+            }
+             if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) {
+                alert("后台通知服务尚未就绪，请稍后重试或刷新页面。");
+                return;
+            }
+            showDesktopNotification({
+                name: "测试游戏",
+                header_image: "https://placehold.co/460x215/1b2838/ffffff?text=Test+Game",
+                appId: "440"
+            }, new Date().toLocaleString());
+        };
+
+        function registerServiceWorker() {
+            if ('serviceWorker' in navigator) {
+                const swCode = `
+                    self.addEventListener('notificationclick', event => {
+                      event.notification.close();
+                      const urlToOpen = event.notification.data.url;
+                      if (urlToOpen) {
+                        event.waitUntil(
+                            clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
+                                let matchingClient = null;
+                                for (let i = 0; i < windowClients.length; i++) {
+                                    const client = windowClients[i];
+                                    if (client.url.endsWith(urlToOpen)) {
+                                        matchingClient = client;
+                                        break;
+                                    }
+                                }
+                                if (matchingClient) {
+                                    return matchingClient.focus();
+                                } else {
+                                    return clients.openWindow(urlToOpen);
+                                }
+                            })
+                        );
+                      }
+                    });
+                `;
+                const swBlob = new Blob([swCode], { type: 'application/javascript' });
+                const swUrl = URL.createObjectURL(swBlob);
+
+                navigator.serviceWorker.register(swUrl)
+                    .then(reg => console.log('Service worker 注册成功', reg))
+                    .catch(err => console.error('Service worker 注册失败', err));
+            }
+        }
+        
+        function showRefreshSummaryModal(updatedGames) {
+            refreshSummaryContent.innerHTML = ''; 
+
+            if (updatedGames.length === 0) {
+                refreshSummaryContent.innerHTML = '<p class="text-center text-gray-400">所有游戏都已是最新状态，没有发现新动态。</p>';
+            } else {
+                const list = document.createElement('ul');
+                list.className = 'space-y-3';
+                updatedGames.forEach(game => {
+                    const item = document.createElement('li');
+                    item.className = 'p-3 bg-gray-700/50 rounded-md';
+                    item.innerHTML = `
+                        <p class="font-semibold text-white">${game.name}</p>
+                        <p class="text-sm text-cyan-400">新动态于: ${game.newUpdateTime}</p>
+                    `;
+                    list.appendChild(item);
+                });
+                refreshSummaryContent.appendChild(list);
+            }
+            
+            refreshSummaryModal.classList.remove('hidden');
+        }
+
+        async function refreshAllGames() {
+            showLoading(true, refreshAllBtn, refreshAllBtnText, refreshAllIcon, refreshAllSpinner);
+            const appIds = Object.keys(monitoredGames);
+            if (appIds.length === 0) {
+                alert("没有需要刷新的游戏。");
+                showLoading(false, refreshAllBtn, refreshAllBtnText, refreshAllIcon, refreshAllSpinner);
+                return;
+            }
+
+            let updatedGames = [];
+            
+            const statusPopup = document.createElement('div');
+            statusPopup.className = 'fixed bottom-5 right-5 bg-gray-700 text-white py-2 px-4 rounded-lg shadow-lg z-50';
+            document.body.appendChild(statusPopup);
+
+            for (const [index, appId] of appIds.entries()) {
+                statusPopup.textContent = `正在刷新 ${index + 1} / ${appIds.length}... (${appId})`;
+                const oldLastUpdate = monitoredGames[appId]?.lastUpdate || 0;
+                const result = await addSingleGame(appId); 
+                if (result.success) {
+                    const newLastUpdate = monitoredGames[appId].lastUpdate;
+                    if (newLastUpdate > oldLastUpdate) {
+                        updatedGames.push({
+                            name: monitoredGames[appId].name,
+                            newUpdateTime: new Date(newLastUpdate * 1000).toLocaleString()
+                        });
+                    }
+                } else {
+                    console.error(`刷新 App ID ${appId} 失败: ${result.message}`);
+                    if (result.message.includes("403")) {
+                         alert(`刷新 App ID ${appId} 失败: ${result.message}`);
+                         break; // Stop refreshing if there's a proxy error
+                    }
+                }
+            }
+
+            if (document.body.contains(statusPopup)) {
+                document.body.removeChild(statusPopup);
+            }
+
+            showRefreshSummaryModal(updatedGames);
+
+            saveGames();
+            renderGameList();
+            showLoading(false, refreshAllBtn, refreshAllBtnText, refreshAllIcon, refreshAllSpinner);
+        }
+
+        // --- 事件监听器 ---
+        document.addEventListener('DOMContentLoaded', () => {
+             renderGameList();
+             if ("Notification" in window) updateNotificationButton(Notification.permission);
+             if (Notification.permission === 'granted') {
+                 registerServiceWorker();
+             }
+        });
+        
+        addGameBtn.addEventListener('click', addGameFromInput);
+        appIdInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') addGameFromInput(); });
+        notificationBtn.addEventListener('click', requestNotificationPermission);
+        testNotificationBtn.addEventListener('click', testDesktopNotification);
+        exportBtn.addEventListener('click', exportToCSV);
+        refreshAllBtn.addEventListener('click', refreshAllGames);
+        closeGeminiModalBtn.addEventListener('click', () => geminiModal.classList.add('hidden'));
+        geminiModal.addEventListener('click', (e) => { if (e.target === geminiModal) geminiModal.classList.add('hidden'); });
+        closeRefreshSummaryBtn.addEventListener('click', () => refreshSummaryModal.classList.add('hidden'));
+        
+        // 批量导入
+        importGamesBtn.addEventListener('click', async () => {
+             showLoading(true, importGamesBtn, importBtnText, importBtnSpinner);
+            importStatus.textContent = '正在导入...';
+            const text = batchAppIds.value;
+            const ids = text.match(/\d+/g) || [];
+            const uniqueNewIds = [...new Set(ids)].filter(id => !monitoredGames[id]);
+            
+            if (uniqueNewIds.length === 0) {
+                importStatus.textContent = '没有发现新的 App ID。';
+            } else {
+                let successCount = 0;
+                for (const [index, appId] of uniqueNewIds.entries()) {
+                    importStatus.textContent = `正在导入 ${index + 1} / ${uniqueNewIds.length}... (${appId})`;
+                    const result = await addSingleGame(appId);
+                    if (result.success) {
+                        successCount++;
+                    } else {
+                        alert(`导入 App ID ${appId} 失败: ${result.message}`);
+                        if(result.message.includes("403")) break;
+                    }
+                }
+                importStatus.textContent = `导入完成！成功添加 ${successCount} 个新游戏。`;
+                saveGames();
+                renderGameList();
+            }
+            
+            showLoading(false, importGamesBtn, importBtnText, importBtnSpinner);
+            setTimeout(() => {
+                batchImportModal.classList.add('hidden');
+                importStatus.textContent = '';
+                batchAppIds.value = '';
+            }, 3000);
+        });
+        closeImportModalBtn.addEventListener('click', () => batchImportModal.classList.add('hidden'));
+        cancelImportBtn.addEventListener('click', () => batchImportModal.classList.add('hidden'));
+        batchImportBtn.addEventListener('click', () => batchImportModal.classList.remove('hidden'));
+
+    </script>
+</body>
+</html>
+
