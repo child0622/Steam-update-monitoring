@@ -271,7 +271,8 @@ export const useGameStore = create<GameStore>()(
             const title = `${updatedGames.length} 款游戏有新更新！`;
             const body = `更新游戏：${gameNames.length > 50 ? gameNames.substring(0, 50) + '...' : gameNames}`;
             
-            notificationService.showNotification(title, {
+            // 无论手动还是自动，只要有更新，就强制弹出系统通知
+            await notificationService.showNotification(title, {
                 body: body,
                 icon: updatedGames[0].header_image, 
                 data: { type: 'focus_app' },
