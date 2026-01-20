@@ -102,6 +102,11 @@ npm run dev
 
 ## ❓ 常见问题 (FAQ)
 
+**Q: 运行 npm 时提示“无法加载文件...禁止运行脚本”？**
+A: 这是 Windows PowerShell 的默认安全策略导致的。你可以任选一种方法解决：
+*   **方法一（推荐）**：使用 **Command Prompt (CMD)** 代替 PowerShell 运行命令。
+*   **方法二**：以管理员身份运行 PowerShell，输入 `Set-ExecutionPolicy RemoteSigned -Scope CurrentUser` 并回车确认。
+
 **Q: 为什么添加游戏时提示“网络错误”？**
 A: 本项目使用公共代理连接 Steam。如果网络不稳定，系统会自动重试。如果一直失败，请检查是否开启了 VPN，或者稍后再试。
 
