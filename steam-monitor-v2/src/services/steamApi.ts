@@ -15,7 +15,7 @@ export interface GameDetails {
 }
 
 // 带超时的 Fetch 封装
-async function fetchWithTimeout(url: string, options: RequestInit = {}, timeout = 10000) {
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeout = 5000) {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeout);
     try {
@@ -28,58 +28,48 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, timeout 
     }
 }
 
-async function fetchWithProxy(targetUrl: string, retries = 2): Promise<any> {
+async function fetchWithProxy(targetUrl: string, retries = 0): Promise<any> {
   let lastError: any;
 
-  // 尝试所有代理
+  // 尝试所有代理 (无内部重试，快速失败)
   for (const proxyFn of PROXIES) {
     const proxiedUrl = proxyFn(targetUrl);
     
-    // 每个代理内部重试
-    for (let i = 0; i < retries; i++) {
-      try {
-        // 适当延长超时时间至 10 秒
-        const response = await fetchWithTimeout(proxiedUrl, {}, 10000);
-        
-        if (!response.ok) {
-           // 如果是 403/429，可能是代理被限制，尝试下一个代理
-           if (response.status === 403 || response.status === 429) {
-             throw new Error(`PROXY_LIMIT_${response.status}`);
-           }
-           throw new Error(`HTTP ${response.status}`);
-        }
-
-        // 尝试解析 JSON
-        let data;
-        try {
-            data = await response.json();
-        } catch (jsonError) {
-            throw new Error("INVALID_JSON_RESPONSE");
-        }
-
-        // 验证数据格式
-        if (typeof data !== 'object' || data === null) {
-             throw new Error("INVALID_DATA_FORMAT");
-        }
-        
-        return data; // 成功
-      } catch (error: any) {
-        lastError = error;
-        // 如果是代理限制或格式错误，直接切换下一个代理，不重试
-        if (error.message.startsWith("PROXY_LIMIT") || error.message === "INVALID_JSON_RESPONSE") {
-            break; 
-        }
-        // 如果是 AbortError (超时)，也直接重试或切代理
-        
-        // 简短等待后重试
-        if (i < retries - 1) {
-            await new Promise(r => setTimeout(r, 800));
-        }
+    try {
+      // 超时时间缩短为 5 秒
+      const response = await fetchWithTimeout(proxiedUrl, {}, 5000);
+      
+      if (!response.ok) {
+          if (response.status === 403 || response.status === 429) {
+            // 代理限制，继续下一个代理
+            continue;
+          }
+          // 其他 HTTP 错误，继续下一个代理
+          continue; 
       }
+
+      let data;
+      try {
+          data = await response.json();
+      } catch (jsonError) {
+          // JSON 解析失败，继续下一个代理
+          continue;
+      }
+
+      if (typeof data !== 'object' || data === null) {
+            // 格式错误，继续下一个代理
+            continue;
+      }
+      
+      return data; // 成功
+    } catch (error: any) {
+      lastError = error;
+      // 网络错误或超时，继续下一个代理
+      continue;
     }
   }
   
-  throw lastError || new Error("所有代理连接均失败，请检查网络");
+  throw lastError || new Error("所有代理连接均失败");
 }
 
 export const steamApi = {

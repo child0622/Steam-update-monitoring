@@ -227,11 +227,16 @@ export const useGameStore = create<GameStore>()(
                  // 计算当前已完成的总数 = 总数 - 剩余未完成
                  // 这里为了 UI 简单，我们只在 Toast 显示“第 X 轮重试: 剩余 Y 个”
                  if (round === 1) {
-                     set({ refreshProgress: { current: completed, total: appIds.length, currentAppId } });
+                     // 修复进度显示：由于 pMap 是针对 pendingIds 的，我们需要映射回总数
+                     // currentAppId 这里是 item 本身
+                     set({ refreshProgress: { current: completed, total: appIds.length, currentAppId: currentAppId as any } });
                  } else {
                      set({ refreshProgress: { current: appIds.length - pendingIds.length + completed, total: appIds.length, currentAppId: `重试(轮次${round}): ${currentAppId}` } });
                  }
-            });
+            }, 
+            // baseProgressIndex，用于多轮时累加显示（这里简化为 round 1 正确显示即可，后续轮次显示重试状态）
+            0
+            );
 
             // 筛选出成功的
             const successItems = results.filter(r => r.success);
