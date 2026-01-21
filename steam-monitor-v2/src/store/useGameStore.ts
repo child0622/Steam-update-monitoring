@@ -25,6 +25,7 @@ interface GameStore {
   refreshSingleGame: (appId: string) => Promise<void>;
   closeSummaryModal: () => void;
   importGames: (appIds: string[]) => Promise<{ successCount: number; errors: string[] }>;
+  restoreGames: (gamesList: Game[]) => void;
 }
 
 // 辅助函数：带错误捕获的单个游戏更新逻辑
@@ -342,11 +343,30 @@ export const useGameStore = create<GameStore>()(
         }
 
         return { successCount, errors };
+      },
+
+      restoreGames: (gamesList: Game[]) => {
+        set((state) => {
+            const newGames = { ...state.games };
+            let restoredCount = 0;
+            
+            gamesList.forEach(game => {
+                // 直接覆盖或添加，保留原有的 lastCheck, lastUpdate 等字段
+                if (game && game.appId) {
+                    newGames[game.appId] = game;
+                    restoredCount++;
+                }
+            });
+            
+            return { games: newGames };
+        });
       }
     }),
     {
       name: 'monitored-games-storage',
-      storage: createJSONStorage(() => localStorage), 
+      storage: createJSONStorage(() => localStorage),
+      // 只持久化 games 数据，忽略 isRefreshing 等临时状态
+      partialize: (state) => ({ games: state.games }),
     }
   )
 );

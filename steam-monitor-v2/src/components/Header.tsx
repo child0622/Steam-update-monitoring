@@ -107,20 +107,14 @@ export const Header: React.FC<HeaderProps> = ({ onOpenImport }) => {
             }
 
             // 提取 AppID 并导入
-            // 这里我们假设备份文件里有完整的游戏数据，但为了安全和一致性，
-            // 最好还是只提取 ID 然后重新走一遍 import 流程，或者直接合并状态。
-            // 鉴于用户说"识别数量不一致"，直接恢复完整状态可能更好。
-            // 但 store 的 importGames 逻辑是重新 fetch。
-            // 我们可以直接把 AppID 提取出来，调用 importGames
-            const appIds = importedGames.map((g: any) => g.appId).filter((id: any) => typeof id === 'string');
-            
-            if (appIds.length === 0) {
+            // 鉴于用户说"识别数量不一致"且希望保留旧数据，我们直接恢复完整状态
+            if (importedGames.length === 0) {
                 alert("备份文件中未找到有效的游戏数据");
                 return;
             }
 
-            const { successCount, errors } = await importGames(appIds);
-            alert(`数据恢复完成!\n成功导入: ${successCount} 个\n失败: ${errors.length} 个${errors.length > 0 ? '\n' + errors.join('\n') : ''}`);
+            restoreGames(importedGames);
+            alert(`数据恢复完成! 共恢复 ${importedGames.length} 个游戏。`);
             
         } catch (error) {
             alert("无法解析备份文件，请确保选择的是正确的 JSON 文件。");

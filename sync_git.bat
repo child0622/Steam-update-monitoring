@@ -22,7 +22,6 @@ if %errorlevel% equ 0 (
 ) else (
     echo.
     echo ❌ 同步失败，请检查网络或代理设置。
+    pause
 )
 
-echo.
-pause
