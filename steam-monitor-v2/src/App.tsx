@@ -15,6 +15,9 @@ function App() {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   useEffect(() => {
+    // 强制重置僵尸状态：每次页面加载时，无论之前存了什么，都强制设为“空闲”
+    useGameStore.setState({ isRefreshing: false, refreshProgress: null });
+
     // Initial Service Worker Registration check
     notificationService.registerServiceWorker();
 

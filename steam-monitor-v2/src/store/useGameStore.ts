@@ -24,7 +24,7 @@ interface GameStore {
   refreshGames: (isAuto?: boolean) => Promise<void>;
   refreshSingleGame: (appId: string) => Promise<void>;
   closeSummaryModal: () => void;
-  importGames: (appIds: string[]) => Promise<{ successCount: number; errors: string[] }>;
+  importGames: (appIds: string[], onProgress?: (current: number, total: number, appId: string) => void) => Promise<{ successCount: number; errors: string[] }>;
   restoreGames: (gamesList: Game[]) => void;
 }
 
@@ -294,51 +294,67 @@ export const useGameStore = create<GameStore>()(
 
       closeSummaryModal: () => set({ showSummaryModal: false }),
 
-      importGames: async (appIds) => {
+      importGames: async (appIds, onProgress) => {
         let successCount = 0;
         const errors: string[] = [];
         
         const { games, addGame } = get();
+        // 过滤掉已经在列表中的游戏
         const uniqueIds = [...new Set(appIds)].filter(id => !games[id]);
         
         if (uniqueIds.length === 0) return { successCount: 0, errors: [] };
 
-        // 导入也使用“死磕模式”
-        // 这里 addGame 内部已经封装了 API 调用，但没有 retry 逻辑（之前是在 importGames 里做的）
-        // 我们需要在 addGame 失败时判断是否 fatal
-        
         let pendingIds = [...uniqueIds];
+        const total = uniqueIds.length;
+        let processed = 0;
         let round = 1;
 
+        // 死磕模式：只要还有 pendingIds，就一直循环，直到全部成功
         while (pendingIds.length > 0) {
              const nextPendingIds: string[] = [];
              
+             // 优化并发：
+             // 第一轮使用较高并发 (5)，后续轮次降级 (2) 以求稳
+             // 同时减少每轮之间的等待
+             const concurrency = round === 1 ? 5 : 2;
+
+             if (round > 1) {
+                 console.log(`导入重试第 ${round} 轮，剩余 ${pendingIds.length} 个...`);
+             }
+             
              await pMap(pendingIds, async (appId) => {
-                // 重试延迟
-                if (round > 1) await new Promise(r => setTimeout(r, 1000));
+                // 动态间隔：第一轮快一点 (300ms)，后续轮次慢一点 (800ms)
+                const delay = round === 1 ? 300 : 800;
+                await new Promise(r => setTimeout(r, delay)); 
                 
+                // 更新进度条 UI (在开始处理前更新)
+                if (onProgress) onProgress(processed + 1, total, appId);
+
                 const result = await addGame(appId);
                 
                 if (result.success) {
                     successCount++;
+                    processed++; // 只有成功或确认失败(fatal)才算处理完？不，只要这一轮跑过了就算一次尝试
+                    // 但为了 UI 进度条准确，我们最好是成功一个涨一个，或者处理完一个涨一个
+                    // 这里简化逻辑：processed 仅用于展示“当前正在处理第几个”
                 } else {
                     // 检查错误信息是否包含 fatal 关键词
-                    // 我们在 addGame 里处理了 INVALID_APP_ID 返回特定 message
                     if (result.message?.includes("无效的 AppID")) {
                         errors.push(`AppID ${appId}: ${result.message}`);
+                        processed++; // 无效 ID 也算处理完毕
                     } else {
                         // 网络错误等，加入下一轮
                         nextPendingIds.push(appId);
                     }
                 }
-             }, round === 1 ? 5 : 2); // 导入并发稍低
+             }, concurrency);
 
              pendingIds = nextPendingIds;
              round++;
              
              if (pendingIds.length > 0) {
-                 console.log(`导入重试第 ${round} 轮，剩余 ${pendingIds.length} 个...`);
-                 await new Promise(r => setTimeout(r, 2000));
+                 // 轮次间隔休息
+                 await new Promise(r => setTimeout(r, 1500));
              }
         }
 

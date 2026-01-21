@@ -1,11 +1,13 @@
 
-// 代理配置：优先使用用户反馈速度较快的 cors-anywhere，并添加超时控制
+// 代理配置：优先使用无需授权且速度较快的代理
 const PROXIES = [
-  // 优先级1：CORS Anywhere (用户反馈样本中速度较快，需配合 demo 页面授权)
-  (url: string) => `https://cors-anywhere.herokuapp.com/${url}`,
-  // 优先级2：CORS Proxy.io (备用，通常稳定)
+  // 优先级1：CORS Proxy.io (目前最稳定，无需授权)
   (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
-  // 优先级3：AllOrigins (最后手段，有时不稳定)
+  // 优先级2：CodeTabs (备用，无需授权)
+  (url: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+  // 优先级3：CORS Anywhere (需要用户手动点击 demo 授权，降级为备用)
+  (url: string) => `https://cors-anywhere.herokuapp.com/${url}`,
+  // 优先级4：AllOrigins (JSON包装，作为最后手段)
   (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
 ];
 
@@ -15,7 +17,7 @@ export interface GameDetails {
 }
 
 // 带超时的 Fetch 封装
-async function fetchWithTimeout(url: string, options: RequestInit = {}, timeout = 5000) {
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeout = 8000) {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeout);
     try {
@@ -28,7 +30,7 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, timeout 
     }
 }
 
-async function fetchWithProxy(targetUrl: string, retries = 0): Promise<any> {
+async function fetchWithProxy(targetUrl: string): Promise<any> {
   let lastError: any;
 
   // 尝试所有代理 (无内部重试，快速失败)
@@ -36,8 +38,8 @@ async function fetchWithProxy(targetUrl: string, retries = 0): Promise<any> {
     const proxiedUrl = proxyFn(targetUrl);
     
     try {
-      // 超时时间缩短为 5 秒
-      const response = await fetchWithTimeout(proxiedUrl, {}, 5000);
+      // 超时时间适当延长到 8 秒，因为 News API 可能较慢
+      const response = await fetchWithTimeout(proxiedUrl, {}, 8000);
       
       if (!response.ok) {
           if (response.status === 403 || response.status === 429) {
@@ -74,7 +76,8 @@ async function fetchWithProxy(targetUrl: string, retries = 0): Promise<any> {
 
 export const steamApi = {
   async getGameDetails(appId: string): Promise<GameDetails> {
-    const url = `https://store.steampowered.com/api/appdetails?appids=${appId}`;
+    // 强制使用中文语言参数
+    const url = `https://store.steampowered.com/api/appdetails?appids=${appId}&l=schinese`;
     try {
         const data = await fetchWithProxy(url);
         
@@ -107,6 +110,7 @@ export const steamApi = {
   },
 
   async getLatestNews(appId: string): Promise<number> {
+    // 移除语言参数，确保 100% 兼容性，只追求获取正确的时间戳
     const url = `https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/?appid=${appId}&count=1`;
     try {
         const data = await fetchWithProxy(url);
@@ -117,10 +121,6 @@ export const steamApi = {
         return newsItems[0].date;
     } catch (e) {
         // News 获取失败通常不影响核心功能，可以返回 0
-        // 为了防止死循环，如果 News 获取失败，我们返回 0，视为无更新，而不是抛出异常导致重试
-        // 这样做可能会漏掉更新，但解决了“卡死”问题。
-        // 如果用户需要绝对精准，可以再加一个严格模式。
-        // 但根据用户反馈“一直重复刷新”，优先解决死循环。
         console.warn(`获取新闻失败 ${appId} (已忽略错误)`, e);
         return 0;
     }
@@ -130,13 +130,19 @@ export const steamApi = {
     const url = `https://api.steampowered.com/ISteamUserStats/GetNumberOfCurrentPlayers/v1/?appid=${appId}`;
     try {
         const data = await fetchWithProxy(url);
+        
+        // 增加对数据结构的宽容检查
+        if (!data || !data.response) {
+             return 0;
+        }
+
         // 如果 result 不是 1，说明获取失败或者 ID 无效
-        if (data.response && data.response.result !== 1) {
+        if (data.response.result !== 1) {
              // 可能是无效 ID，也可能是没人玩（但没人玩通常返回 result:1, player_count:0）
              // 暂时视为成功（返回0），避免卡死
              return 0;
         }
-        return data.response?.player_count || 0;
+        return data.response.player_count || 0;
     } catch (e) {
         // 即使失败也返回 0，不阻断流程
         console.warn(`获取在线人数失败 ${appId} (已忽略错误)`, e);

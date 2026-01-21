@@ -8,7 +8,7 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ onOpenImport }) => {
-  const { games, refreshGames, isRefreshing, importGames } = useGameStore();
+  const { games, refreshGames, isRefreshing, restoreGames } = useGameStore();
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -106,9 +106,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenImport }) => {
                 throw new Error("无效的备份文件格式");
             }
 
-            // 提取 AppID 并导入
-            // 鉴于用户说"识别数量不一致"且希望保留旧数据，我们直接恢复完整状态
-            if (importedGames.length === 0) {
+            if (!importedGames || importedGames.length === 0) {
                 alert("备份文件中未找到有效的游戏数据");
                 return;
             }
