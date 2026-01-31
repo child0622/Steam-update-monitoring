@@ -19,6 +19,7 @@ export const GameCard: React.FC<GameCardProps> = ({ game, onRemove }) => {
 
   return (
     <div className="bg-gray-800/80 backdrop-blur-sm p-5 rounded-lg shadow-lg transition transform hover:-translate-y-1 border border-gray-700 card-glow relative group">
+      
       <div className="flex items-center gap-4 mb-4">
         <img 
           src={game.header_image} 
@@ -28,21 +29,23 @@ export const GameCard: React.FC<GameCardProps> = ({ game, onRemove }) => {
         <h3 className="text-lg font-bold text-white flex-1 truncate" title={game.name}>
           {game.name}
         </h3>
-        <button 
-           onClick={handleRefresh}
-           disabled={isSpinning}
-           className="p-2 bg-gray-700 hover:bg-gray-600 rounded-full text-cyan-400 transition disabled:opacity-50"
-           title="单独刷新此游戏"
-        >
-            <RefreshCw size={18} className={isSpinning ? 'animate-spin' : ''} />
-        </button>
       </div>
       
       <div className="space-y-2 text-sm text-gray-400">
         <p><strong>App ID:</strong> <span className="text-cyan-400">{game.appId}</span></p>
         <p><strong>上次检测:</strong> <span className="text-cyan-400">{new Date(game.lastCheck).toLocaleString()}</span></p>
         <p><strong>最新动态:</strong> <span className="text-cyan-400">{new Date(game.lastUpdate * 1000).toLocaleString()}</span></p>
-        <p><strong>在线人数:</strong> <span className="text-green-400 font-bold">{game.playerCount.toLocaleString()}</span></p>
+        <div className="flex justify-between items-center">
+            <p><strong>在线人数:</strong> <span className="text-green-400 font-bold">{game.playerCount.toLocaleString()}</span></p>
+            <button 
+                onClick={handleRefresh}
+                disabled={isSpinning}
+                className="p-1.5 bg-gray-700 hover:bg-gray-600 rounded-full text-cyan-400 transition disabled:opacity-50"
+                title="刷新数据"
+            >
+                <RefreshCw size={14} className={isSpinning ? 'animate-spin' : ''} />
+            </button>
+        </div>
       </div>
 
       <div className="mt-4 pt-4 border-t border-gray-700 grid grid-cols-2 gap-2 items-center">

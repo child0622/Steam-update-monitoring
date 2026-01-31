@@ -5,6 +5,10 @@ import { Header } from './components/Header';
 import { UpdateSummaryModal } from './components/Modals/UpdateSummaryModal';
 import { BatchImportModal } from './components/Modals/BatchImportModal';
 import { RefreshToast } from './components/RefreshToast';
+import { NetworkDashboard } from './components/NetworkDashboard';
+import { DynamicBackground } from './components/DynamicBackground';
+import { StatusPanel } from './components/SidePanels/StatusPanel';
+import { TrendsPanel } from './components/SidePanels/TrendsPanel';
 import { useGameStore } from './store/useGameStore';
 import { notificationService } from './services/notificationService';
 
@@ -31,11 +35,32 @@ function App() {
   }, [refreshGames]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-900 to-cyan-900/50 p-4 sm:p-8">
-      <div className="w-full max-w-7xl mx-auto">
+    <div className="min-h-screen text-gray-100 relative">
+      <DynamicBackground />
+      
+      <div className="w-full max-w-[1800px] mx-auto p-4 sm:p-6 relative z-10">
         <Header onOpenImport={() => setIsImportModalOpen(true)} />
-        <AddGameInput />
-        <GameList />
+        
+        <div className="grid grid-cols-1 xl:flex gap-6 items-start mt-6">
+          
+          {/* 左侧面板：仅在大屏显示 */}
+          <div className="hidden xl:block sticky top-6 w-[280px]">
+             <StatusPanel />
+          </div>
+
+          {/* 中间主要内容区域 */}
+          <div className="flex flex-col gap-6 min-w-0 flex-1">
+            <NetworkDashboard />
+            <AddGameInput />
+            <GameList />
+          </div>
+
+          {/* 右侧面板：仅在大屏显示 */}
+          <div className="hidden xl:block sticky top-6 w-[280px]">
+             <TrendsPanel />
+          </div>
+
+        </div>
       </div>
 
       <UpdateSummaryModal />
