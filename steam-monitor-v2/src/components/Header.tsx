@@ -142,13 +142,13 @@ export const Header: React.FC<HeaderProps> = ({ onOpenImport }) => {
             onClick={handleNotificationToggle}
             className={`flex items-center gap-2 font-bold py-2 px-4 rounded-md transition duration-300 ${
               notificationPermission === 'granted' 
-                ? 'bg-green-700 cursor-default' 
-                : 'bg-gray-700 hover:bg-gray-600 text-cyan-300'
+                ? 'bg-green-700 cursor-default text-white' 
+                : 'bg-red-800 hover:bg-red-700 text-white animate-pulse'
             }`}
             disabled={notificationPermission === 'granted'}
           >
             {notificationPermission === 'granted' ? <Bell size={18} /> : <BellOff size={18} />}
-            <span>{notificationPermission === 'granted' ? '通知已开启' : '开启通知'}</span>
+            <span>{notificationPermission === 'granted' ? '通知已开启' : '点击开启通知 (必点)'}</span>
           </button>
           
           <button 

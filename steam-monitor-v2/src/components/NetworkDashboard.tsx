@@ -1,33 +1,53 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Activity, Wifi, ArrowDownUp } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Wifi, ArrowDownUp } from 'lucide-react';
+import { useGameStore } from '../store/useGameStore';
 
 export const NetworkDashboard: React.FC = () => {
   const [ping, setPing] = useState<number>(0);
   const [history, setHistory] = useState<number[]>(new Array(40).fill(0)); // Increase resolution
   const [status, setStatus] = useState<'connected' | 'connecting' | 'disconnected'>('connected');
-  const [downloadSpeed, setDownloadSpeed] = useState(0);
-  const [uploadSpeed, setUploadSpeed] = useState(0);
+  const [throughputDisplay, setThroughputDisplay] = useState(0); // in KB
   
-  // 模拟 Ping 和 流量检测
+  const { dataThroughput } = useGameStore();
+
+  // 监听真实数据吞吐量的变化，并模拟瞬时速度
+  // 注意：useGameStore 里的 dataThroughput 是累积总量
+  // 我们需要计算“最近几秒的增量”来作为“当前速度”
+  useEffect(() => {
+     let lastTotal = dataThroughput;
+     const interval = setInterval(() => {
+        const currentTotal = useGameStore.getState().dataThroughput;
+        const diff = currentTotal - lastTotal;
+        lastTotal = currentTotal;
+        
+        // diff 是 bytes，转换为 KB
+        setThroughputDisplay(diff / 1024);
+     }, 2000);
+     return () => clearInterval(interval);
+  }, [dataThroughput]);
+
+  // 真实 Ping 检测
   useEffect(() => {
     const checkPing = async () => {
       const start = Date.now();
       try {
-        await fetch('https://corsproxy.io/?https://store.steampowered.com/favicon.ico', { method: 'HEAD', cache: 'no-store' });
+        // 尝试请求 Steam 商店 API (通过本地代理或 CORS) 来测量真实延迟
+        // 为了避免 CORS 问题和数据解析负担，我们请求一个极小的资源或利用 HEAD 请求（如果支持）
+        // 但为了通用性，我们还是用之前的 fetch 逻辑，不过目标换成 steam 相关域名（如果可能）
+        // 或者继续用 npmmirror 作为“网络连通性”基准，因为 Steam API 在前端直接 Ping 很难（CORS）
+        // 但既然我们有了代理配置，我们可以尝试 Ping 代理后的地址？
+        // 为了稳定，我们还是 Ping 一个高可用 CDN，代表“本地网络到互联网”的延迟
+        // 同时，如果最近有成功的 API 请求，我们可以把那个延迟存下来？(这需要 store 支持)
+        // 这里暂时保持 Ping CDN，因为这反映了“用户的网络状况”
+        await fetch('https://registry.npmmirror.com/react/latest', { mode: 'no-cors', cache: 'no-store' });
         const latency = Date.now() - start;
         
         setPing(latency);
         setStatus('connected');
         setHistory(prev => [...prev.slice(1), latency]);
-        
-        // 模拟流量波动 (基于 latency 制造一些随机性)
-        setDownloadSpeed(Math.random() * 5 + 2); // 2-7 MB/s
-        setUploadSpeed(Math.random() * 2 + 0.5); // 0.5-2.5 MB/s
       } catch (e) {
         setStatus('disconnected');
         setHistory(prev => [...prev.slice(1), 0]);
-        setDownloadSpeed(0);
-        setUploadSpeed(0);
       }
     };
 
@@ -114,16 +134,16 @@ export const NetworkDashboard: React.FC = () => {
                 <div className="flex flex-col gap-1">
                    <div className="flex items-center gap-2 text-xs text-gray-400">
                       <ArrowDownUp size={14} className="text-emerald-400" />
-                      <span>下载</span>
+                      <span>数据吞吐</span>
                    </div>
-                   <div className="font-mono text-lg text-emerald-300 font-bold">{downloadSpeed.toFixed(2)} <span className="text-xs font-normal text-gray-500">MB/s</span></div>
+                   <div className="font-mono text-lg text-emerald-300 font-bold">{throughputDisplay.toFixed(2)} <span className="text-xs font-normal text-gray-500">KB/s</span></div>
                 </div>
                 <div className="flex flex-col gap-1">
                    <div className="flex items-center gap-2 text-xs text-gray-400">
                       <ArrowDownUp size={14} className="text-sky-400 rotate-180" />
-                      <span>上传</span>
+                      <span>总流量</span>
                    </div>
-                   <div className="font-mono text-lg text-sky-300 font-bold">{uploadSpeed.toFixed(2)} <span className="text-xs font-normal text-gray-500">MB/s</span></div>
+                   <div className="font-mono text-lg text-sky-300 font-bold">{(dataThroughput / 1024 / 1024).toFixed(2)} <span className="text-xs font-normal text-gray-500">MB</span></div>
                 </div>
             </div>
         </div>

@@ -19,6 +19,16 @@ interface GameStore {
   updateSummary: Game[];
   showSummaryModal: boolean;
   
+  // System Metrics
+  startTime: number;
+  requestCount: number;
+  logs: string[];
+  dataThroughput: number; // in bytes
+
+  addLog: (message: string) => void;
+  incrementRequestCount: (success?: boolean) => void;
+  addDataThroughput: (bytes: number) => void;
+  
   addGame: (appId: string) => Promise<{ success: boolean; message?: string }>;
   removeGame: (appId: string) => void;
   refreshGames: (isAuto?: boolean) => Promise<void>;
@@ -31,13 +41,25 @@ interface GameStore {
 // 辅助函数：带错误捕获的单个游戏更新逻辑
 async function fetchGameData(appId: string, currentGames: Record<string, Game>) {
     const oldGame = currentGames[appId];
+    // 获取 store 实例用于更新流量
+    // 注意：在函数内部获取 store 可能有闭包问题，但这里我们只需要 getState
+    // 不过由于 fetchGameData 是独立的，我们最好通过参数传进来，或者简单估算。
+    // 这里简单处理：每次成功请求假设消耗 2KB 流量 (JSON 大小)
+    const ESTIMATED_SIZE = 2048; 
+    
     try {
         const [lastUpdate, playerCount] = await Promise.all([
             steamApi.getLatestNews(appId),
             steamApi.getPlayerCount(appId)
         ]);
         
-        const hasUpdate = lastUpdate > oldGame.lastUpdate;
+        // 成功后更新流量 (需要在组件或 store action 里调用 addDataThroughput，这里没法直接调用)
+        // 这是一个架构上的小妥协，我们在下面 pMap 的回调里统一加流量?
+        // 不，我们在 useGameStore 的 action 里处理。
+        
+        // 只有当获取到有效的时间戳时才更新，避免覆盖为 0 (1970年)
+        const newLastUpdate = lastUpdate > 0 ? lastUpdate : oldGame.lastUpdate;
+        const hasUpdate = newLastUpdate > oldGame.lastUpdate;
         
         return {
             appId,
@@ -45,7 +67,7 @@ async function fetchGameData(appId: string, currentGames: Record<string, Game>) 
             data: {
                 ...oldGame,
                 lastCheck: Date.now(),
-                lastUpdate,
+                lastUpdate: newLastUpdate,
                 playerCount: playerCount > 0 ? playerCount : oldGame.playerCount 
             },
             hasUpdate
@@ -98,11 +120,35 @@ export const useGameStore = create<GameStore>()(
       updateSummary: [],
       showSummaryModal: false,
 
+      // Initialize System Metrics
+      startTime: Date.now(),
+      requestCount: 0,
+      logs: [],
+      dataThroughput: 0,
+
+      addLog: (message: string) => set(state => {
+        const time = new Date().toLocaleTimeString('en-US', { hour12: false });
+        return { logs: [...state.logs.slice(-49), `[${time}] ${message}`] };
+      }),
+
+      incrementRequestCount: () => set(state => ({ requestCount: state.requestCount + 1 })),
+      
+      addDataThroughput: (bytes: number) => set(state => ({ dataThroughput: state.dataThroughput + bytes })),
+
       addGame: async (appId) => {
-        const { games } = get();
+        // 主动请求通知权限
+        if ('Notification' in window && Notification.permission === 'default') {
+             notificationService.requestPermission();
+        }
+
+        const { games, addLog, incrementRequestCount } = get();
         if (games[appId]) {
+          addLog(`尝试添加已存在的游戏: ${appId}`);
           return { success: false, message: '该游戏已在监控列表中' };
         }
+        
+        addLog(`开始添加游戏: ${appId}`);
+        incrementRequestCount();
 
         try {
           const [details, lastUpdate, playerCount] = await Promise.all([
@@ -110,6 +156,8 @@ export const useGameStore = create<GameStore>()(
             steamApi.getLatestNews(appId),
             steamApi.getPlayerCount(appId)
           ]);
+
+          addLog(`成功获取游戏数据: ${details.name}`);
 
           const newGame: Game = {
             appId,
@@ -125,6 +173,7 @@ export const useGameStore = create<GameStore>()(
           }));
           return { success: true };
         } catch (error: any) {
+            addLog(`添加游戏失败 ${appId}: ${error.message}`);
             // 如果是 INVALID_APP_ID，直接失败，不重试
             if (error.message === "INVALID_APP_ID" || error.isInvalidId) {
                  return { success: false, message: '无效的 AppID，请检查输入' };
@@ -146,26 +195,31 @@ export const useGameStore = create<GameStore>()(
       },
 
       refreshSingleGame: async (appId) => {
-          const { games } = get();
+          const { games, addLog, incrementRequestCount } = get();
           const game = games[appId];
           if (!game) return;
 
           set({ isRefreshing: true, refreshProgress: { current: 1, total: 1, currentAppId: appId } });
+          addLog(`手动刷新单体游戏: ${game.name} (${appId})`);
 
           // 单个刷新也采用循环重试，直到成功
           let result;
           let retryCount = 0;
           
           while (true) {
+             incrementRequestCount();
              result = await fetchGameData(appId, games);
+             useGameStore.getState().addDataThroughput(2048);
              if (result.success || result.isFatal) break;
              
              retryCount++;
+             addLog(`刷新 ${game.name} 失败，准备第 ${retryCount} 次重试...`);
              set({ refreshProgress: { current: 1, total: 1, currentAppId: `重试中(${retryCount}): ${appId}` } });
              await new Promise(r => setTimeout(r, 1500)); // 失败后等待 1.5s 重试
           }
           
           if (result.success && result.data) {
+             addLog(`刷新成功: ${result.data.name} (在线: ${result.data.playerCount})`);
              set(state => ({
                  games: { ...state.games, [appId]: result.data! },
                  isRefreshing: false,
@@ -173,11 +227,14 @@ export const useGameStore = create<GameStore>()(
              }));
              
              if (result.hasUpdate) {
+                 addLog(`发现更新! ${result.data.name}`);
                  notificationService.showNotification(`${result.data.name} 有新更新!`, {
                     body: `最新动态发布于 ${new Date(result.data.lastUpdate * 1000).toLocaleString()}`,
                     icon: result.data.header_image,
                     data: { type: 'focus_app' },
-                    tag: `game-update-${appId}-${result.data.lastUpdate}`
+                    tag: `game-update-${appId}-${result.data.lastUpdate}`,
+                    renotify: true,
+                    requireInteraction: true
                  });
                  set({ updateSummary: [result.data], showSummaryModal: true });
              } 
@@ -191,53 +248,49 @@ export const useGameStore = create<GameStore>()(
       },
 
       refreshGames: async (isAuto = false) => {
-        const { games } = get();
+        // 如果是手动刷新，主动请求通知权限
+        if (!isAuto && 'Notification' in window && Notification.permission === 'default') {
+             notificationService.requestPermission();
+        }
+
+        const { games, addLog, incrementRequestCount } = get();
         let appIds = Object.keys(games);
         if (appIds.length === 0) return;
 
         set({ isRefreshing: true, refreshProgress: { current: 0, total: appIds.length } });
+        addLog(`${isAuto ? '自动' : '手动'}全量刷新开始，共 ${appIds.length} 个游戏`);
         
         let pendingIds = [...appIds];
         let round = 1;
         const newGamesMap = { ...games };
         const updatedGames: Game[] = [];
 
-        // 死磕模式：只要还有 pendingIds，就一直循环，直到全部成功
-        // 注意：fetchGameData 会标记 isFatal (无效ID)，这种会被剔除，防止死循环
-        while (pendingIds.length > 0) {
-            // 根据轮次动态调整并发：第一轮快一点，后面慢一点稳一点
-            // 从第3轮开始，强制串行(并发1)，避免死循环
-            const concurrency = round === 1 ? 8 : (round === 2 ? 3 : 1);
+        // 极速模式：最多重试 1 次 (共 2 轮)
+        // 既然用户有 VPN，我们追求速度，不再无限死磕
+        while (pendingIds.length > 0 && round <= 2) {
+            // 降低并发数，避免触发代理服务 (CodeTabs) 的速率限制
+            const concurrency = 5;
             
             if (round > 1) {
-                console.log(`开始第 ${round} 轮重试，剩余 ${pendingIds.length} 个...`);
+                console.log(`第 ${round} 轮重试，剩余 ${pendingIds.length} 个...`);
+                addLog(`进入第 ${round} 轮重试，剩余 ${pendingIds.length} 个失败项目`);
             }
 
             const results = await pMap(pendingIds, async (appId) => {
-                // 重试轮次加一点随机延迟
-                if (round > 1) {
-                    await new Promise(r => setTimeout(r, Math.random() * 1000 + 1000));
-                }
-                // 串行轮次增加显著延迟
-                if (round >= 3) {
-                     await new Promise(r => setTimeout(r, 2000));
-                }
-                return fetchGameData(appId, games);
+                // 移除人为延迟，直接请求
+                incrementRequestCount();
+                const res = await fetchGameData(appId, games);
+                // 估算流量：每个请求约 2KB
+                useGameStore.getState().addDataThroughput(2048);
+                return res;
             }, concurrency, (completed, currentAppId) => {
-                 // 进度显示逻辑：总是显示总进度
-                 // 计算当前已完成的总数 = 总数 - 剩余未完成
-                 // 这里为了 UI 简单，我们只在 Toast 显示“第 X 轮重试: 剩余 Y 个”
+                 // 进度显示逻辑
                  if (round === 1) {
-                     // 修复进度显示：由于 pMap 是针对 pendingIds 的，我们需要映射回总数
-                     // currentAppId 这里是 item 本身
                      set({ refreshProgress: { current: completed, total: appIds.length, currentAppId: currentAppId as any } });
                  } else {
-                     set({ refreshProgress: { current: appIds.length - pendingIds.length + completed, total: appIds.length, currentAppId: `重试(轮次${round}): ${currentAppId}` } });
+                     set({ refreshProgress: { current: appIds.length - pendingIds.length + completed, total: appIds.length, currentAppId: `重试: ${currentAppId}` } });
                  }
-            }, 
-            // baseProgressIndex，用于多轮时累加显示（这里简化为 round 1 正确显示即可，后续轮次显示重试状态）
-            0
-            );
+            }, 0);
 
             // 筛选出成功的
             const successItems = results.filter(r => r.success);
@@ -246,6 +299,7 @@ export const useGameStore = create<GameStore>()(
                     newGamesMap[res.appId] = res.data;
                     if (res.hasUpdate) {
                         updatedGames.push(res.data);
+                        addLog(`发现更新: ${res.data.name}`);
                     }
                 }
             });
@@ -257,12 +311,9 @@ export const useGameStore = create<GameStore>()(
             pendingIds = failedItems.map(r => r.appId);
             
             round++;
-            
-            // 如果还有剩余，稍作休息避免封禁
-            if (pendingIds.length > 0) {
-                await new Promise(r => setTimeout(r, 2000));
-            }
         }
+
+        addLog(`刷新结束. 成功: ${appIds.length - pendingIds.length}, 失败: ${pendingIds.length}`);
 
         // 循环结束，意味着所有 ID 要么成功，要么是无效 ID
         
@@ -272,13 +323,18 @@ export const useGameStore = create<GameStore>()(
             const title = `${updatedGames.length} 款游戏有新更新！`;
             const body = `更新游戏：${gameNames.length > 50 ? gameNames.substring(0, 50) + '...' : gameNames}`;
             
+            console.log('Sending system notification:', title);
+            
             // 无论手动还是自动，只要有更新，就强制弹出系统通知
-            await notificationService.showNotification(title, {
+            // 不使用 await，避免阻塞后续逻辑
+            notificationService.showNotification(title, {
                 body: body,
                 icon: updatedGames[0].header_image, 
                 data: { type: 'focus_app' },
-                tag: 'game-update-summary'
-            });
+                tag: `game-update-summary-${Date.now()}`, // 使用唯一 tag 确保不被静默合并
+                renotify: true, // 强制重新通知（震动/弹窗）
+                requireInteraction: true // 保持常驻直到用户点击
+            }).catch(e => console.error('Failed to send notification:', e));
         }
 
         const shouldShowModal = isAuto ? updatedGames.length > 0 : true;

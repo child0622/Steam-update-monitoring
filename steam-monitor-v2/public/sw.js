@@ -1,3 +1,11 @@
+self.addEventListener('install', (event) => {
+  self.skipWaiting(); // 强制立即激活，不等待
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(clients.claim()); // 立即接管所有页面
+});
+
 self.addEventListener('notificationclick', event => {
   event.notification.close();
 

@@ -25,13 +25,22 @@ function App() {
     // Initial Service Worker Registration check
     notificationService.registerServiceWorker();
 
-    // Auto Refresh Timer
-    const timer = setInterval(() => {
-      console.log('Auto-refreshing games...');
-      refreshGames(true);
-    }, AUTO_REFRESH_INTERVAL);
+    // Auto Refresh Timer using Web Worker (prevents throttling in background)
+    const worker = new Worker(new URL('./workers/timerWorker.js', import.meta.url));
+    
+    worker.onmessage = (e) => {
+      if (e.data === 'tick') {
+        console.log('Auto-refreshing games (triggered by Worker)...');
+        refreshGames(true);
+      }
+    };
+    
+    worker.postMessage('start');
 
-    return () => clearInterval(timer);
+    return () => {
+      worker.postMessage('stop');
+      worker.terminate();
+    };
   }, [refreshGames]);
 
   return (

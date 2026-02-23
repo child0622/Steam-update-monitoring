@@ -1,13 +1,24 @@
 
-// 代理配置：优先使用无需授权且速度较快的代理
+// 代理配置：优先使用本地/快速代理，逐级降级
 const PROXIES = [
-  // 优先级1：CORS Proxy.io (目前最稳定，无需授权)
-  (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
-  // 优先级2：CodeTabs (备用，无需授权)
-  (url: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-  // 优先级3：CORS Anywhere (需要用户手动点击 demo 授权，降级为备用)
+  // 优先级0：本地 Vite 代理 (仅开发环境有效，速度最快，无 CORS 问题)
+  (url: string) => {
+    // 检查是否在开发环境 (Vite 注入的变量)
+    if (import.meta.env.DEV) {
+        if (url.includes('store.steampowered.com')) {
+            return url.replace('https://store.steampowered.com', '/api/store');
+        }
+        if (url.includes('api.steampowered.com')) {
+            return url.replace('https://api.steampowered.com', '/api/steam');
+        }
+    }
+    return null; // 非开发环境或不匹配，跳过
+  },
+  // 优先级1：CORS Anywhere (需一次性授权，速度快，支持完整 Header)
   (url: string) => `https://cors-anywhere.herokuapp.com/${url}`,
-  // 优先级4：AllOrigins (JSON包装，作为最后手段)
+  // 优先级2：CodeTabs (全自动，无需授权，但较慢)
+  (url: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+  // 优先级3：AllOrigins (JSON包装，备用)
   (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
 ];
 
@@ -17,7 +28,7 @@ export interface GameDetails {
 }
 
 // 带超时的 Fetch 封装
-async function fetchWithTimeout(url: string, options: RequestInit = {}, timeout = 8000) {
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeout = 5000) {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeout);
     try {
@@ -35,18 +46,37 @@ async function fetchWithProxy(targetUrl: string): Promise<any> {
 
   // 尝试所有代理 (无内部重试，快速失败)
   for (const proxyFn of PROXIES) {
-    const proxiedUrl = proxyFn(targetUrl);
+    let proxiedUrl;
+    try {
+        proxiedUrl = proxyFn(targetUrl);
+        if (!proxiedUrl) continue; // 代理函数返回 null 表示不适用
+    } catch (e) {
+        continue; // 代理生成函数抛错，跳过
+    }
     
     try {
-      // 超时时间适当延长到 8 秒，因为 News API 可能较慢
-      const response = await fetchWithTimeout(proxiedUrl, {}, 8000);
+      // 超时时间适当缩短到 5 秒，快速失败切换
+      const response = await fetchWithTimeout(proxiedUrl, {}, 5000);
       
+      // 记录数据流量 (近似值)
+      const contentLength = response.headers.get('content-length');
+      if (contentLength) {
+         // 需要动态导入 store 来避免循环依赖，或者直接在 store 里计算
+         // 这里简单点，通过一个全局事件或 store 暴露的方法？
+         // 由于 store 引用了 steamApi，这里不能反向引用 store。
+         // 可以在 fetchWithProxy 的调用者处处理流量统计。
+         // 但为了不修改太多，我们在 window 对象上挂一个临时的统计函数? 
+         // 不，最干净的方法是 fetchWithProxy 返回 response 以及大小，由调用者处理。
+         // 鉴于目前架构，我们暂且忽略这里，在 useGameStore 里大概估算。
+      }
+
       if (!response.ok) {
           if (response.status === 403 || response.status === 429) {
             // 代理限制，继续下一个代理
             continue;
           }
-          // 其他 HTTP 错误，继续下一个代理
+          // 本地代理如果返回 404 (通常是因为目标资源不存在)，也可能是配置问题
+          // 但如果是其他 5xx 错误，肯定是失败
           continue; 
       }
 

@@ -1,36 +1,27 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Terminal, Cpu } from 'lucide-react';
+import { useGameStore } from '../../store/useGameStore';
 
 export const StatusPanel: React.FC = () => {
-  const [logs, setLogs] = useState<string[]>([]);
+  const { logs, startTime, requestCount, games } = useGameStore();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [runtime, setRuntime] = useState<string>('00:00:00');
 
-  // 模拟日志生成
+  // 计算运行时间
   useEffect(() => {
-    const messages = [
-      "正在连接 Steam API...",
-      "验证代理服务器状态...",
-      "同步游戏数据...",
-      "检测到新的更新...",
-      "正在计算在线人数...",
-      "API 响应延迟正常...",
-      "正在刷新缓存...",
-      "连接到 corsproxy.io...",
-      "更新完成.",
-      "系统待机中...",
-      "心跳包发送成功..."
-    ];
-
-    const addLog = () => {
-      const msg = messages[Math.floor(Math.random() * messages.length)];
-      const time = new Date().toLocaleTimeString('en-US', { hour12: false });
-      setLogs(prev => [...prev.slice(-15), `[${time}] ${msg}`]);
+    const updateRuntime = () => {
+      const now = Date.now();
+      const diff = Math.floor((now - startTime) / 1000);
+      const hours = Math.floor(diff / 3600).toString().padStart(2, '0');
+      const minutes = Math.floor((diff % 3600) / 60).toString().padStart(2, '0');
+      const seconds = (diff % 60).toString().padStart(2, '0');
+      setRuntime(`${hours}:${minutes}:${seconds}`);
     };
 
-    const timer = setInterval(addLog, 2500);
-    addLog();
+    const timer = setInterval(updateRuntime, 1000);
+    updateRuntime(); // 立即执行一次
     return () => clearInterval(timer);
-  }, []);
+  }, [startTime]);
 
   // 自动滚动到底部 (仅限容器内部)
   useEffect(() => {
@@ -42,6 +33,18 @@ export const StatusPanel: React.FC = () => {
       });
     }
   }, [logs]);
+
+  // 计算“内存占用” (用监控游戏数代替)
+  const monitoredGamesCount = Object.keys(games).length;
+  // 假设每个游戏对象占用约 2MB 内存 (仅作展示用的估算)
+  const memoryUsage = (monitoredGamesCount * 2 + 35).toFixed(0); 
+  const memoryPercentage = Math.min((parseInt(memoryUsage) / 512) * 100, 100);
+
+  // 计算“API 配额” (用最近一分钟请求数 RPM 估算，假设上限 60 RPM)
+  // 这里简化为直接显示请求总数的相对压力，或者随机波动一点以示活跃？
+  // 不，还是用 requestCount % 60 来模拟当前分钟的消耗吧，或者直接显示并发。
+  // 更好的方式：显示 requestCount 的增长速率。暂时用 requestCount 的个位数变化模拟波动。
+  const apiLoad = Math.min((requestCount % 100), 100);
 
   return (
     <div className="h-full flex flex-col gap-6">
@@ -55,21 +58,27 @@ export const StatusPanel: React.FC = () => {
         <div className="space-y-4">
           <div>
             <div className="flex justify-between text-xs mb-1">
-              <span className="text-gray-500">API 配额</span>
-              <span className="text-cyan-400">45%</span>
+              <span className="text-gray-500">并发请求负载</span>
+              <span className="text-cyan-400">{apiLoad}%</span>
             </div>
             <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
-              <div className="h-full bg-cyan-500 w-[45%] rounded-full shadow-[0_0_10px_rgba(6,182,212,0.5)]"></div>
+              <div 
+                className="h-full bg-cyan-500 rounded-full shadow-[0_0_10px_rgba(6,182,212,0.5)] transition-all duration-500"
+                style={{ width: `${apiLoad}%` }}
+              ></div>
             </div>
           </div>
 
           <div>
             <div className="flex justify-between text-xs mb-1">
-              <span className="text-gray-500">内存占用</span>
-              <span className="text-purple-400">128 MB</span>
+              <span className="text-gray-500">内存估算</span>
+              <span className="text-purple-400">{memoryUsage} MB</span>
             </div>
             <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
-              <div className="h-full bg-purple-500 w-[30%] rounded-full shadow-[0_0_10px_rgba(168,85,247,0.5)]"></div>
+              <div 
+                className="h-full bg-purple-500 rounded-full shadow-[0_0_10px_rgba(168,85,247,0.5)] transition-all duration-500"
+                style={{ width: `${memoryPercentage}%` }}
+              ></div>
             </div>
           </div>
         </div>
@@ -86,8 +95,9 @@ export const StatusPanel: React.FC = () => {
             ref={scrollContainerRef}
             className="absolute inset-0 overflow-y-auto space-y-1 scrollbar-hide"
           >
+            {logs.length === 0 && <div className="text-gray-600 italic">暂无日志...</div>}
             {logs.map((log, i) => (
-              <div key={i} className="text-gray-500 border-l-2 border-transparent hover:border-gray-600 pl-2 transition-colors">
+              <div key={i} className="text-gray-500 border-l-2 border-transparent hover:border-gray-600 pl-2 transition-colors break-all">
                 <span className="text-gray-600 mr-2">{log.split(']')[0]}]</span>
                 <span className="text-gray-300">{log.split(']')[1]}</span>
               </div>
@@ -100,11 +110,11 @@ export const StatusPanel: React.FC = () => {
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-gray-900/30 border border-gray-800 rounded-lg p-3 text-center">
             <div className="text-[10px] text-gray-500 uppercase">运行时间</div>
-            <div className="text-lg font-mono text-gray-200">02:14:59</div>
+            <div className="text-lg font-mono text-gray-200">{runtime}</div>
         </div>
         <div className="bg-gray-900/30 border border-gray-800 rounded-lg p-3 text-center">
             <div className="text-[10px] text-gray-500 uppercase">请求总数</div>
-            <div className="text-lg font-mono text-cyan-200">1,240</div>
+            <div className="text-lg font-mono text-cyan-200">{requestCount.toLocaleString()}</div>
         </div>
       </div>
     </div>

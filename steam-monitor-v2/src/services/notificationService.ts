@@ -25,30 +25,38 @@ export const notificationService = {
        return;
     }
 
-    try {
-      // 优先尝试 Service Worker (支持点击聚焦)
-      if ('serviceWorker' in navigator) {
-        // 设置 1 秒超时，防止 SW 未就绪导致通知不弹出
-        const swRegistration = await Promise.race([
-            navigator.serviceWorker.ready,
-            new Promise<ServiceWorkerRegistration | null>(resolve => setTimeout(() => resolve(null), 1000))
-        ]);
-
-        if (swRegistration) {
-            swRegistration.showNotification(title, options);
-            return;
+    // 强制优先使用 Service Worker，因为它能在后台唤醒系统通知
+    // 即使在前台，为了统一行为，也尽量使用 SW
+    if ('serviceWorker' in navigator) {
+        try {
+            // 尝试获取或等待 SW 就绪
+            // 这里我们不再设置短超时，而是相信 SW 会就绪，或者如果它没安装，下面会捕获异常
+            // 自动更新是在 App.tsx 启动后很久发生的，SW 理论上早就激活了
+            const swRegistration = await navigator.serviceWorker.ready;
+            
+            if (swRegistration) {
+                console.log('Using Service Worker for system notification:', title);
+                await swRegistration.showNotification(title, options);
+                return; // 成功发送，直接返回
+            }
+        } catch (e) {
+            console.warn('Service Worker notification attempt failed:', e);
+            // 继续向下执行降级方案
         }
-      }
-    } catch (e) {
-      console.error('Service Worker notification failed:', e);
     }
 
-    // 降级方案：使用普通 Notification API (可能无法聚焦窗口)
+    // 降级方案：使用普通 Notification API
+    // 注意：在 Chrome 等浏览器中，如果页面不可见（后台），new Notification 可能会被静默失败或抛出异常
     console.log('Falling back to standard Notification API');
-    const n = new Notification(title, options);
-    n.onclick = () => {
-        window.focus();
-        n.close();
-    };
+    try {
+        const n = new Notification(title, options);
+        n.onclick = (event) => {
+            event.preventDefault(); 
+            window.focus();
+            n.close();
+        };
+    } catch (e) {
+        console.error('Standard Notification API failed:', e);
+    }
   }
 };
